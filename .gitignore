@@ -1,0 +1,7 @@
+# Sistema (MacOS / Windows)
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
