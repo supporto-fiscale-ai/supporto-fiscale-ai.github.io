@@ -9,15 +9,14 @@ L'architettura è basata su file statici ("Vanilla") per poter essere caricata g
 - `js/api.js` (o logica interna): Gestisce l'invio delle chiamate (fetch) al server e l'autenticazione JWT.
 - `js/config.js`: Contiene l'URL del backend.
 
-## Configurazione Collegamento (Cloudflare Tunnel)
-Dato che il backend gira in locale sul tuo server, questo frontend non saprà come raggiungerlo. Dovrai indicarglielo.
+## Configurazione Collegamento (Automatica tramite Gist)
+Dato che il backend gira in locale e il suo indirizzo Cloudflare cambia ad ogni riavvio, abbiamo implementato un sistema di "scoperta" automatica dell'indirizzo:
 
-1. Avvia il Cloudflare Tunnel dal server di backend (vedi README del backend).
-2. Copia l'URL HTTPS che ti viene restituito (es. `https://random-words.trycloudflare.com`).
-3. Apri il file `js/config.js` (che creeremo a breve) e incolla l'URL:
-   ```javascript
-   const BACKEND_URL = "https://random-words.trycloudflare.com";
-   ```
+1. Sul backend gira uno script (`start_tunnel.py`) che lancia Cloudflare e pubblica il link appena generato su un file segreto su GitHub (un **Gist**).
+2. All'avvio, questo frontend legge il file `js/config.js`, che contiene il link fisso al Gist.
+3. Il frontend scarica il Gist, scopre qual è l'URL di Cloudflare del giorno e configura in automatico tutte le chiamate API senza richiedere il tuo intervento.
+
+**Non dovrai più modificare `config.js` né fare commit ogni volta che riavvii il server locale!**
 
 ## Sicurezza e Deploy
 - **Non inserire MAI password** all'interno di questi file HTML/JS, perché una volta pubblicati su GitHub Pages il codice sorgente sarà visibile a chiunque sappia usare "Ispeziona Elemento".
