@@ -54,7 +54,7 @@ async function sendMessage() {
     const typingId = appendTypingIndicator();
     
     try {
-        // 3. Effettua la chiamata API sicura con JWT
+        // 3. Effettua la chiamata API sicura con JWT per AVVIARE IL TASK
         const response = await fetch(`${CONFIG.BACKEND_URL}/api/chat`, {
             method: 'POST',
             headers: {
@@ -63,9 +63,6 @@ async function sendMessage() {
             },
             body: JSON.stringify({ domanda: text })
         });
-        
-        // Rimuovi l'indicatore di digitazione
-        removeMessage(typingId);
         
         if (response.status === 401 || response.status === 403) {
             // Token scaduto o non valido
@@ -76,18 +73,47 @@ async function sendMessage() {
         }
         
         if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
+            throw new Error(`Errore avvio analisi (status: ${response.status})`);
         }
         
         const data = await response.json();
+        const taskId = data.task_id;
         
-        // 4. Mostra la risposta dell'intelligenza artificiale
-        appendMessage('assistant', data.risposta, data.fonti);
+        // 4. Polling Asincrono: Controlla lo stato ogni 4 secondi
+        let isDone = false;
+        while (!isDone) {
+            // Attendi 4 secondi prima di chiedere di nuovo
+            await new Promise(resolve => setTimeout(resolve, 4000));
+            
+            const statusRes = await fetch(`${CONFIG.BACKEND_URL}/api/chat/status/${taskId}`, {
+                method: 'GET',
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            });
+            
+            if (!statusRes.ok) {
+                throw new Error(`Errore controllo stato (status: ${statusRes.status})`);
+            }
+            
+            const statusData = await statusRes.json();
+            
+            if (statusData.status === 'done') {
+                // Rimuovi l'indicatore di digitazione
+                removeMessage(typingId);
+                // Mostra la risposta finale
+                appendMessage('assistant', statusData.risposta, statusData.fonti);
+                isDone = true;
+            } else if (statusData.status === 'error') {
+                throw new Error(statusData.detail || "Errore sconosciuto nel database vettoriale");
+            }
+            // Se lo stato è "processing", il ciclo ricomincia e attende altri 4 secondi
+        }
         
     } catch (error) {
         console.error("Errore chat:", error);
         removeMessage(typingId);
-        appendMessage('assistant', "❌ Si è verificato un errore di connessione col backend. Riprova più tardi.");
+        appendMessage('assistant', `❌ Si è verificato un errore: ${error.message}. Riprova più tardi.`);
     } finally {
         inputField.disabled = false;
         sendBtn.disabled = false;
