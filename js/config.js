@@ -1,6 +1,25 @@
 const CONFIG = {
-    // Sostituisci questo URL con l'indirizzo pubblico fornito da Cloudflare Tunnel
-    // Esempio: "https://random-words.trycloudflare.com"
-    // Usa "http://localhost:8000" solo per test eseguiti sulla stessa macchina fisica
-    BACKEND_URL: "https://valves-dec-color-happening.trycloudflare.com"
+    // URL del Gist pubblico (API di GitHub)
+    GIST_URL: "https://api.github.com/gists/a9b516fffea743068838be945b5b3700",
+    BACKEND_URL: "" // Verrà popolato in automatico
 };
+
+async function initBackendUrl() {
+    try {
+        // Aggiungiamo un timestamp per evitare problemi di cache del browser
+        const response = await fetch(CONFIG.GIST_URL + '?t=' + new Date().getTime());
+        const data = await response.json();
+        
+        // Estrapoliamo il contenuto JSON
+        const fileContentStr = data.files['backend_url.json'].content;
+        const fileContent = JSON.parse(fileContentStr);
+        
+        CONFIG.BACKEND_URL = fileContent.url;
+        console.log("Backend URL configurato in automatico:", CONFIG.BACKEND_URL);
+    } catch (error) {
+        console.error("Errore di caricamento URL dal Gist:", error);
+    }
+}
+
+// Avvia il caricamento dell'URL appena la pagina si apre
+initBackendUrl();
