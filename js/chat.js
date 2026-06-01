@@ -53,8 +53,11 @@ async function sendMessage() {
     // 2. Mostra l'indicatore di digitazione
     const typingId = appendTypingIndicator();
     
+    const assistantMessageId = 'assistant-' + Date.now();
+    let accumulatedText = "";
+    
     try {
-        // 3. Effettua la chiamata API sicura con JWT per AVVIARE IL TASK
+        // 3. Effettua la chiamata API asincrona per avviare il flusso
         const response = await fetch(`${CONFIG.BACKEND_URL}/api/chat`, {
             method: 'POST',
             headers: {
@@ -65,7 +68,6 @@ async function sendMessage() {
         });
         
         if (response.status === 401 || response.status === 403) {
-            // Token scaduto o non valido
             sessionStorage.removeItem('jwt_token');
             alert("Sessione scaduta. Effettua nuovamente il login.");
             window.location.href = 'index.html';
@@ -73,47 +75,70 @@ async function sendMessage() {
         }
         
         if (!response.ok) {
-            throw new Error(`Errore avvio analisi (status: ${response.status})`);
+            throw new Error(`Errore connessione API (status: ${response.status})`);
         }
         
-        const data = await response.json();
-        const taskId = data.task_id;
-        
-        // 4. Polling Asincrono: Controlla lo stato ogni 4 secondi
+        // 4. Lettura del flusso in tempo reale (SSE)
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder("utf-8");
+        let buffer = "";
         let isDone = false;
+        
         while (!isDone) {
-            // Attendi 4 secondi prima di chiedere di nuovo
-            await new Promise(resolve => setTimeout(resolve, 4000));
+            const { value, done } = await reader.read();
+            if (done) break;
             
-            const statusRes = await fetch(`${CONFIG.BACKEND_URL}/api/chat/status/${taskId}`, {
-                method: 'GET',
-                headers: {
-                    'Authorization': `Bearer ${token}`
+            buffer += decoder.decode(value, { stream: true });
+            
+            const parts = buffer.split("\n\n");
+            // Conserva l'ultimo frammento possibilmente incompleto
+            buffer = parts.pop();
+            
+            for (const part of parts) {
+                const line = part.trim();
+                if (!line) continue;
+                
+                if (line.startsWith("data: ")) {
+                    const dataStr = line.slice(6).trim();
+                    if (dataStr === "[DONE]") {
+                        isDone = true;
+                        break;
+                    }
+                    
+                    try {
+                        const parsed = JSON.parse(dataStr);
+                        if (parsed.type === "token") {
+                            // Rimuovi l'indicatore di digitazione non appena arriva il primo token
+                            removeMessage(typingId);
+                            
+                            // Se non abbiamo ancora creato il contenitore per il messaggio reale, lo creiamo ora
+                            if (!document.getElementById(assistantMessageId)) {
+                                appendEmptyAssistantMessage(assistantMessageId);
+                            }
+                            
+                            accumulatedText += parsed.content;
+                            updateAssistantMessage(assistantMessageId, accumulatedText);
+                        } else if (parsed.type === "sources") {
+                            appendSourcesToMessage(assistantMessageId, parsed.content);
+                        } else if (parsed.type === "error") {
+                            throw new Error(parsed.content);
+                        }
+                    } catch (e) {
+                        console.error("Errore decodifica chunk SSE:", e, line);
+                    }
                 }
-            });
-            
-            if (!statusRes.ok) {
-                throw new Error(`Errore controllo stato (status: ${statusRes.status})`);
             }
-            
-            const statusData = await statusRes.json();
-            
-            if (statusData.status === 'done') {
-                // Rimuovi l'indicatore di digitazione
-                removeMessage(typingId);
-                // Mostra la risposta finale
-                appendMessage('assistant', statusData.risposta, statusData.fonti);
-                isDone = true;
-            } else if (statusData.status === 'error') {
-                throw new Error(statusData.detail || "Errore sconosciuto nel database vettoriale");
-            }
-            // Se lo stato è "processing", il ciclo ricomincia e attende altri 4 secondi
         }
         
     } catch (error) {
         console.error("Errore chat:", error);
         removeMessage(typingId);
-        appendMessage('assistant', `❌ Si è verificato un errore: ${error.message}. Riprova più tardi.`);
+        // Se il messaggio è già stato parzialmente scritto, mostriamo l'errore lì, altrimenti ne creiamo uno nuovo
+        if (document.getElementById(assistantMessageId)) {
+            updateAssistantMessage(assistantMessageId, accumulatedText + `\n\n❌ *Errore di connessione a metà stream: ${error.message}*`);
+        } else {
+            appendMessage('assistant', `❌ Si è verificato un errore: ${error.message}. Riprova più tardi.`);
+        }
     } finally {
         inputField.disabled = false;
         sendBtn.disabled = false;
@@ -199,4 +224,79 @@ function appendTypingIndicator() {
 function removeMessage(id) {
     const el = document.getElementById(id);
     if (el) el.remove();
+}
+
+// --- Nuove Funzioni di Supporto per lo Streaming ---
+
+function appendEmptyAssistantMessage(id) {
+    const chatBox = document.getElementById('chatBox');
+    
+    const messageDiv = document.createElement('div');
+    messageDiv.className = `message assistant`;
+    messageDiv.id = id;
+    
+    const avatarDiv = document.createElement('div');
+    avatarDiv.className = 'avatar';
+    avatarDiv.innerText = 'AI';
+    
+    const contentDiv = document.createElement('div');
+    contentDiv.className = 'message-content';
+    contentDiv.innerHTML = '<span class="streaming-cursor">|</span>';
+    
+    messageDiv.appendChild(avatarDiv);
+    messageDiv.appendChild(contentDiv);
+    
+    chatBox.appendChild(messageDiv);
+    chatBox.scrollTop = chatBox.scrollHeight;
+}
+
+function updateAssistantMessage(id, content) {
+    const el = document.getElementById(id);
+    if (el) {
+        const contentDiv = el.querySelector('.message-content');
+        if (contentDiv) {
+            // Aggiungiamo un cursore lampeggiante in coda durante la digitazione
+            if (typeof marked !== 'undefined') {
+                contentDiv.innerHTML = marked.parse(content) + '<span class="streaming-cursor">|</span>';
+            } else {
+                contentDiv.textContent = content + '|';
+            }
+        }
+        const chatBox = document.getElementById('chatBox');
+        chatBox.scrollTop = chatBox.scrollHeight;
+    }
+}
+
+function appendSourcesToMessage(id, sources) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    
+    const contentDiv = el.querySelector('.message-content');
+    if (!contentDiv) return;
+    
+    // Rimuoviamo il cursore di streaming prima di mostrare le fonti
+    const cursor = contentDiv.querySelector('.streaming-cursor');
+    if (cursor) cursor.remove();
+    
+    if (!sources || sources.length === 0) return;
+    
+    const sourcesContainer = document.createElement('div');
+    sourcesContainer.className = 'sources-container';
+    
+    const title = document.createElement('div');
+    title.className = 'sources-title';
+    title.innerHTML = '<svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path></svg> Fonti Normative Consultate:';
+    sourcesContainer.appendChild(title);
+    
+    sources.forEach(source => {
+        const srcDiv = document.createElement('div');
+        srcDiv.className = 'source-item';
+        srcDiv.innerText = source;
+        sourcesContainer.appendChild(srcDiv);
+    });
+    
+    contentDiv.appendChild(sourcesContainer);
+    
+    const chatBox = document.getElementById('chatBox');
+    chatBox.scrollTop = chatBox.scrollHeight;
 }

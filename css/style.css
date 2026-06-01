@@ -472,3 +472,20 @@ h1, h2, h3 {
     }
     .message { max-width: 95%; }
 }
+
+/* Streaming Cursor Animation */
+.streaming-cursor {
+    display: inline-block;
+    width: 2px;
+    height: 15px;
+    background-color: currentColor;
+    margin-left: 4px;
+    vertical-align: middle;
+    animation: blink 0.8s step-end infinite;
+}
+
+@keyframes blink {
+    from, to { background-color: transparent }
+    50% { background-color: currentColor }
+}
+
