@@ -55,87 +55,99 @@ async function sendMessage() {
     
     const assistantMessageId = 'assistant-' + Date.now();
     let accumulatedText = "";
+    let cursor = 0;
+    let taskId = null;
+    let pollIntervalId = null;
     
     try {
-        // 3. Effettua la chiamata API asincrona per avviare il flusso
-        const response = await fetch(`${CONFIG.BACKEND_URL}/api/chat`, {
+        // 3. Avvia la domanda e ottieni il task_id
+        const startResponse = await fetch(`${CONFIG.BACKEND_URL}/api/chat`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'Authorization': `Bearer ${token}` // Il token segreto
+                'Authorization': `Bearer ${token}`
             },
             body: JSON.stringify({ domanda: text })
         });
         
-        if (response.status === 401 || response.status === 403) {
+        if (startResponse.status === 401 || startResponse.status === 403) {
             sessionStorage.removeItem('jwt_token');
             alert("Sessione scaduta. Effettua nuovamente il login.");
             window.location.href = 'index.html';
             return;
         }
         
-        if (!response.ok) {
-            throw new Error(`Errore connessione API (status: ${response.status})`);
+        if (!startResponse.ok) {
+            throw new Error(`Errore avvio chat (status: ${startResponse.status})`);
         }
         
-        // 4. Lettura del flusso in tempo reale (SSE)
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder("utf-8");
-        let buffer = "";
-        let isDone = false;
+        const startData = await startResponse.json();
+        taskId = startData.task_id;
         
-        while (!isDone) {
-            const { value, done } = await reader.read();
-            if (done) break;
-            
-            buffer += decoder.decode(value, { stream: true });
-            
-            const parts = buffer.split("\n\n");
-            // Conserva l'ultimo frammento possibilmente incompleto
-            buffer = parts.pop();
-            
-            for (const part of parts) {
-                const line = part.trim();
-                if (!line) continue;
-                
-                if (line.startsWith("data: ")) {
-                    const dataStr = line.slice(6).trim();
-                    if (dataStr === "[DONE]") {
-                        isDone = true;
-                        break;
+        // 4. Avvia la routine di polling incrementale e attendi il completamento
+        await new Promise((resolve, reject) => {
+            const doPoll = async () => {
+                try {
+                    const pollResponse = await fetch(`${CONFIG.BACKEND_URL}/api/chat/poll/${taskId}?cursor=${cursor}`, {
+                        method: 'GET',
+                        headers: {
+                            'Authorization': `Bearer ${token}`
+                        }
+                    });
+                    
+                    if (!pollResponse.ok) {
+                        throw new Error(`Errore nel polling (status: ${pollResponse.status})`);
                     }
                     
-                    try {
-                        const parsed = JSON.parse(dataStr);
-                        if (parsed.type === "token") {
-                            // Rimuovi l'indicatore di digitazione non appena arriva il primo token
-                            removeMessage(typingId);
-                            
-                            // Se non abbiamo ancora creato il contenitore per il messaggio reale, lo creiamo ora
-                            if (!document.getElementById(assistantMessageId)) {
-                                appendEmptyAssistantMessage(assistantMessageId);
-                            }
-                            
-                            accumulatedText += parsed.content;
-                            updateAssistantMessage(assistantMessageId, accumulatedText);
-                        } else if (parsed.type === "sources") {
-                            appendSourcesToMessage(assistantMessageId, parsed.content);
-                        } else if (parsed.type === "error") {
-                            throw new Error(parsed.content);
-                        }
-                    } catch (e) {
-                        console.error("Errore decodifica chunk SSE:", e, line);
+                    const data = await pollResponse.json();
+                    
+                    if (data.status === "error") {
+                        throw new Error(data.error || "Errore sconosciuto del modello");
                     }
+                    
+                    // Se abbiamo nuovi token, li mostriamo a schermo
+                    if (data.new_tokens && data.new_tokens.length > 0) {
+                        removeMessage(typingId);
+                        
+                        if (!document.getElementById(assistantMessageId)) {
+                            appendEmptyAssistantMessage(assistantMessageId);
+                        }
+                        
+                        accumulatedText += data.new_tokens;
+                        updateAssistantMessage(assistantMessageId, accumulatedText);
+                    }
+                    
+                    // Aggiorniamo il cursor locale
+                    cursor = data.cursor;
+                    
+                    if (data.status === "completed") {
+                        clearInterval(pollIntervalId);
+                        
+                        // Rimuove l'indicatore nel caso non sia arrivato alcun token (caso limite)
+                        removeMessage(typingId);
+                        
+                        // Mostriamo le fonti normative alla fine
+                        appendSourcesToMessage(assistantMessageId, data.sources || []);
+                        resolve();
+                    }
+                } catch (e) {
+                    clearInterval(pollIntervalId);
+                    reject(e);
                 }
-            }
-        }
+            };
+            
+            // Eseguiamo il primo poll immediatamente, e poi ogni 1500ms
+            doPoll();
+            pollIntervalId = setInterval(doPoll, 1500);
+        });
         
     } catch (error) {
         console.error("Errore chat:", error);
         removeMessage(typingId);
-        // Se il messaggio è già stato parzialmente scritto, mostriamo l'errore lì, altrimenti ne creiamo uno nuovo
+        if (pollIntervalId) clearInterval(pollIntervalId);
+        
         if (document.getElementById(assistantMessageId)) {
-            updateAssistantMessage(assistantMessageId, accumulatedText + `\n\n❌ *Errore di connessione a metà stream: ${error.message}*`);
+            updateAssistantMessage(assistantMessageId, accumulatedText + `\n\n❌ *Errore di connessione: ${error.message}*`);
         } else {
             appendMessage('assistant', `❌ Si è verificato un errore: ${error.message}. Riprova più tardi.`);
         }
