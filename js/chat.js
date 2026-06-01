@@ -57,7 +57,7 @@ async function sendMessage() {
     let accumulatedText = "";
     let cursor = 0;
     let taskId = null;
-    let pollIntervalId = null;
+    let pollTimeoutId = null;
     
     try {
         // 3. Avvia la domanda e ottieni il task_id
@@ -84,9 +84,11 @@ async function sendMessage() {
         const startData = await startResponse.json();
         taskId = startData.task_id;
         
-        // 4. Avvia la routine di polling incrementale e attendi il completamento
+        // 4. Avvia la routine di polling incrementale sequenziale e attendi il completamento
         await new Promise((resolve, reject) => {
+            let active = true;
             const doPoll = async () => {
+                if (!active) return;
                 try {
                     const pollResponse = await fetch(`${CONFIG.BACKEND_URL}/api/chat/poll/${taskId}?cursor=${cursor}`, {
                         method: 'GET',
@@ -121,7 +123,7 @@ async function sendMessage() {
                     cursor = data.cursor;
                     
                     if (data.status === "completed") {
-                        clearInterval(pollIntervalId);
+                        active = false;
                         
                         // Rimuove l'indicatore nel caso non sia arrivato alcun token (caso limite)
                         removeMessage(typingId);
@@ -129,22 +131,26 @@ async function sendMessage() {
                         // Mostriamo le fonti normative alla fine
                         appendSourcesToMessage(assistantMessageId, data.sources || []);
                         resolve();
+                    } else {
+                        // Pianifica il prossimo poll solo dopo il completamento del precedente
+                        if (active) {
+                            pollTimeoutId = setTimeout(doPoll, 1500);
+                        }
                     }
                 } catch (e) {
-                    clearInterval(pollIntervalId);
+                    active = false;
                     reject(e);
                 }
             };
             
-            // Eseguiamo il primo poll immediatamente, e poi ogni 1500ms
+            // Eseguiamo il primo poll immediatamente
             doPoll();
-            pollIntervalId = setInterval(doPoll, 1500);
         });
         
     } catch (error) {
         console.error("Errore chat:", error);
         removeMessage(typingId);
-        if (pollIntervalId) clearInterval(pollIntervalId);
+        if (pollTimeoutId) clearTimeout(pollTimeoutId);
         
         if (document.getElementById(assistantMessageId)) {
             updateAssistantMessage(assistantMessageId, accumulatedText + `\n\n❌ *Errore di connessione: ${error.message}*`);
