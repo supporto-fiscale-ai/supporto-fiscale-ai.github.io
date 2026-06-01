@@ -67,7 +67,7 @@ async function sendMessage() {
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${token}`
             },
-            body: JSON.stringify({ domanda: text })
+            body: JSON.stringify({ domanda: text, mode: (typeof currentMode !== 'undefined' ? currentMode : 'laws') })
         });
         
         if (startResponse.status === 401 || startResponse.status === 403) {
@@ -318,3 +318,74 @@ function appendSourcesToMessage(id, sources) {
     const chatBox = document.getElementById('chatBox');
     chatBox.scrollTop = chatBox.scrollHeight;
 }
+
+// --- Nuove funzioni per Modalità e Upload ---
+let currentMode = 'laws';
+
+function selectMode(mode) {
+    currentMode = mode;
+    document.querySelectorAll('#modeSelector .nav-item').forEach(el => el.classList.remove('active'));
+    const selectedEl = document.querySelector(`.nav-item[data-mode="${mode}"]`);
+    if(selectedEl) selectedEl.classList.add('active');
+}
+
+function updateFileList() {
+    const input = document.getElementById('fileUpload');
+    const list = document.getElementById('fileList');
+    if (input.files.length > 0) {
+        let names = Array.from(input.files).map(f => f.name).join(', ');
+        list.innerText = names;
+    } else {
+        list.innerText = '';
+    }
+}
+
+async function uploadDocuments() {
+    const input = document.getElementById('fileUpload');
+    const status = document.getElementById('uploadStatus');
+    const btn = document.getElementById('uploadBtn');
+    
+    if (input.files.length === 0) {
+        status.innerText = 'Seleziona almeno un file.';
+        return;
+    }
+    
+    const formData = new FormData();
+    for(let i=0; i<input.files.length; i++){
+        formData.append('files', input.files[i]);
+    }
+    
+    btn.disabled = true;
+    btn.innerText = 'Elaborazione...';
+    status.innerText = '';
+    
+    try {
+        const response = await fetch(`${CONFIG.BACKEND_URL}/api/upload_documents`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${token}`
+            },
+            body: formData
+        });
+        
+        if (!response.ok) {
+            const data = await response.json();
+            throw new Error(data.detail || 'Errore durante il caricamento');
+        }
+        
+        status.style.color = '#16a34a';
+        status.innerText = 'Documenti caricati e pronti!';
+        
+        // Passa automaticamente alla modalità documenti o ibrida se si stavano cercando le leggi
+        if (currentMode === 'laws') {
+            selectMode('docs');
+        }
+    } catch (e) {
+        status.style.color = '#ef4444';
+        status.innerText = 'Errore: ' + e.message;
+    } finally {
+        btn.disabled = false;
+        btn.innerText = 'Elabora Documenti';
+    }
+}
+
