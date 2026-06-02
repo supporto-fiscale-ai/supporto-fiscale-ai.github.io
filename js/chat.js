@@ -95,7 +95,11 @@ async function sendMessage() {
         await new Promise((resolve, reject) => {
             let active = true;
             const doPoll = async () => {
-                if (!active || !isPollingActive) return;
+                if (!active) return;
+                if (!isPollingActive) {
+                    resolve();
+                    return;
+                }
                 try {
                     const pollResponse = await fetch(`${CONFIG.BACKEND_URL}/api/chat/poll/${taskId}?cursor=${cursor}`, {
                         method: 'GET',
