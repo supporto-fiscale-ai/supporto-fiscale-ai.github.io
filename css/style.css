@@ -248,6 +248,27 @@ h1, h2, h3 {
     border-color: rgba(239, 68, 68, 0.3);
 }
 
+.btn-new-chat {
+    background: rgba(59, 130, 246, 0.1);
+    border: 1px solid rgba(59, 130, 246, 0.3);
+    color: var(--primary-color);
+    padding: 8px 16px;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.btn-new-chat:hover {
+    background: rgba(59, 130, 246, 0.2);
+    border-color: rgba(59, 130, 246, 0.5);
+    transform: translateY(-1px);
+}
+
 /* Main Chat Area */
 .chat-main {
     flex: 1;

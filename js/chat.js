@@ -389,3 +389,14 @@ async function uploadDocuments() {
     }
 }
 
+function clearChat() {
+    const chatBox = document.getElementById('chatBox');
+    chatBox.innerHTML = `
+        <div class="message assistant">
+            <div class="avatar">AI</div>
+            <div class="message-content">
+                <p>Salve. Sono il tuo Assistente Commercialista (Sistema accelerato Blackwell). Cerca pure nella banca dati legislativa in linguaggio naturale. Come posso aiutarti oggi?</p>
+            </div>
+        </div>
+    `;
+}

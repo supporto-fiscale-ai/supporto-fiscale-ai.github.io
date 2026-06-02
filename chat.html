@@ -55,8 +55,12 @@
 
         <!-- Main Chat Area -->
         <main class="chat-main">
-            <header class="chat-header">
-                <h3>Nuova Consulenza Legale</h3>
+            <header class="chat-header" style="display: flex; justify-content: space-between; align-items: center;">
+                <h3>Consulenza Legale</h3>
+                <button class="btn-new-chat" onclick="clearChat()" title="Ripulisci la cronologia e avvia una nuova sessione">
+                    <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
+                    Nuova Chat
+                </button>
             </header>
             
             <div class="chat-messages" id="chatBox">
