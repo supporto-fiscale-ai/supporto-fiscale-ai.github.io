@@ -26,6 +26,9 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 });
 
+let currentTaskId = null;
+let isPollingActive = false;
+
 // Permette l'invio premendo Enter (senza Shift)
 function handleEnter(e) {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -84,11 +87,15 @@ async function sendMessage() {
         const startData = await startResponse.json();
         taskId = startData.task_id;
         
+        currentTaskId = taskId;
+        isPollingActive = true;
+        document.getElementById('stopBtn').style.display = 'inline-flex';
+        
         // 4. Avvia la routine di polling incrementale sequenziale e attendi il completamento
         await new Promise((resolve, reject) => {
             let active = true;
             const doPoll = async () => {
-                if (!active) return;
+                if (!active || !isPollingActive) return;
                 try {
                     const pollResponse = await fetch(`${CONFIG.BACKEND_URL}/api/chat/poll/${taskId}?cursor=${cursor}`, {
                         method: 'GET',
@@ -158,6 +165,9 @@ async function sendMessage() {
             appendMessage('assistant', `❌ Si è verificato un errore: ${error.message}. Riprova più tardi.`);
         }
     } finally {
+        isPollingActive = false;
+        document.getElementById('stopBtn').style.display = 'none';
+        currentTaskId = null;
         inputField.disabled = false;
         sendBtn.disabled = false;
         inputField.focus();
@@ -390,6 +400,9 @@ async function uploadDocuments() {
 }
 
 function clearChat() {
+    if (isPollingActive) {
+        stopGeneration();
+    }
     const chatBox = document.getElementById('chatBox');
     chatBox.innerHTML = `
         <div class="message assistant">
@@ -399,4 +412,23 @@ function clearChat() {
             </div>
         </div>
     `;
+}
+
+async function stopGeneration() {
+    isPollingActive = false;
+    document.getElementById('stopBtn').style.display = 'none';
+    
+    if (currentTaskId) {
+        try {
+            await fetch(`${CONFIG.BACKEND_URL}/api/chat/stop/${currentTaskId}`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            });
+        } catch (e) {
+            console.error("Errore stop:", e);
+        }
+        currentTaskId = null;
+    }
 }

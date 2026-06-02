@@ -57,10 +57,16 @@
         <main class="chat-main">
             <header class="chat-header" style="display: flex; justify-content: space-between; align-items: center;">
                 <h3>Consulenza Legale</h3>
-                <button class="btn-new-chat" onclick="clearChat()" title="Ripulisci la cronologia e avvia una nuova sessione">
-                    <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
-                    Nuova Chat
-                </button>
+                <div style="display: flex; gap: 12px;">
+                    <button id="stopBtn" class="btn-stop" style="display: none;" onclick="stopGeneration()" title="Interrompi la generazione della risposta">
+                        <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24"><path d="M6 6h12v12H6z"></path></svg>
+                        Stop
+                    </button>
+                    <button class="btn-new-chat" onclick="clearChat()" title="Ripulisci la cronologia e avvia una nuova sessione">
+                        <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
+                        Nuova Chat
+                    </button>
+                </div>
             </header>
             
             <div class="chat-messages" id="chatBox">

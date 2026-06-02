@@ -23,6 +23,10 @@ Dato che il backend gira in locale e il suo indirizzo Cloudflare cambia ad ogni 
 - Il login viene gestito chiedendo all'utente username e password. La pagina invia i dati al backend, riceve un **Token JWT** segreto e lo salva temporaneamente nel browser (`sessionStorage`).
 - Il token garantisce che solo chi possiede le vere credenziali possa usare la tua intelligenza artificiale.
 
+## Nuove Funzionalità dell'Interfaccia
+- **Pulsante Nuova Chat**: Permette di ripulire istantaneamente lo schermo e di avviare una nuova sessione. Invia anche un segnale al server per uccidere eventuali processi pendenti della vecchia chat.
+- **Pulsante Stop Risposta**: Appare dinamicamente durante la generazione dell'AI e permette all'utente di bloccare la scrittura e il calcolo sulla GPU in tempo reale.
+
 ## Comandi Rapidi Git (Push su GitHub Pages)
 Per mandare online il sito:
 ```bash
