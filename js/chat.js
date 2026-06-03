@@ -145,7 +145,7 @@ async function sendMessage() {
                     } else {
                         // Pianifica il prossimo poll solo dopo il completamento del precedente
                         if (active) {
-                            pollTimeoutId = setTimeout(doPoll, 1500);
+                            pollTimeoutId = setTimeout(doPoll, 5000);
                         }
                     }
                 } catch (e) {
