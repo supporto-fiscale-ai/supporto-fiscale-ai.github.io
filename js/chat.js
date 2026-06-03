@@ -94,6 +94,9 @@ async function sendMessage() {
         // 4. Avvia la routine di polling incrementale sequenziale e attendi il completamento
         await new Promise((resolve, reject) => {
             let active = true;
+            let consecutiveErrors = 0;
+            const MAX_RETRIES = 5;
+            
             const doPoll = async () => {
                 if (!active) return;
                 if (!isPollingActive) {
@@ -101,18 +104,27 @@ async function sendMessage() {
                     return;
                 }
                 try {
+                    // Timeout di 15 secondi per ogni singola richiesta fetch
+                    const controller = new AbortController();
+                    const timeoutId = setTimeout(() => controller.abort(), 15000);
+                    
                     const pollResponse = await fetch(`${CONFIG.BACKEND_URL}/api/chat/poll/${taskId}?cursor=${cursor}`, {
                         method: 'GET',
                         headers: {
                             'Authorization': `Bearer ${token}`
-                        }
+                        },
+                        signal: controller.signal
                     });
+                    clearTimeout(timeoutId);
                     
                     if (!pollResponse.ok) {
                         throw new Error(`Errore nel polling (status: ${pollResponse.status})`);
                     }
                     
                     const data = await pollResponse.json();
+                    
+                    // Reset contatore errori su successo
+                    consecutiveErrors = 0;
                     
                     if (data.status === "error") {
                         throw new Error(data.error || "Errore sconosciuto del modello");
@@ -143,19 +155,32 @@ async function sendMessage() {
                         appendSourcesToMessage(assistantMessageId, data.sources || []);
                         resolve();
                     } else {
-                        // Pianifica il prossimo poll solo dopo il completamento del precedente
+                        // Prossimo poll dopo 3 secondi (bilanciato per tunnel Cloudflare gratuiti)
                         if (active) {
-                            pollTimeoutId = setTimeout(doPoll, 5000);
+                            pollTimeoutId = setTimeout(doPoll, 3000);
                         }
                     }
                 } catch (e) {
-                    active = false;
-                    reject(e);
+                    // Se è un errore di rete/timeout (tipico dei tunnel CF), ritenta automaticamente
+                    const isNetworkError = e.name === 'AbortError' || e.message === 'Failed to fetch' || e.name === 'TypeError';
+                    
+                    if (isNetworkError && consecutiveErrors < MAX_RETRIES) {
+                        consecutiveErrors++;
+                        console.warn(`[Poll] Errore di rete (tentativo ${consecutiveErrors}/${MAX_RETRIES}), riprovo...`);
+                        // Backoff esponenziale: 2s, 4s, 8s, 16s, 32s
+                        const backoff = Math.min(2000 * Math.pow(2, consecutiveErrors - 1), 32000);
+                        if (active) {
+                            pollTimeoutId = setTimeout(doPoll, backoff);
+                        }
+                    } else {
+                        active = false;
+                        reject(e);
+                    }
                 }
             };
             
-            // Eseguiamo il primo poll immediatamente
-            doPoll();
+            // Eseguiamo il primo poll dopo 1 secondo (diamo tempo al backend di iniziare)
+            pollTimeoutId = setTimeout(doPoll, 1000);
         });
         
     } catch (error) {
