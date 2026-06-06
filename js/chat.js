@@ -461,3 +461,103 @@ async function stopGeneration() {
         currentTaskId = null;
     }
 }
+
+// --- Prompt Editor ---
+
+function updatePromptUI(isCustom) {
+    const badge = document.getElementById('promptBadge');
+    const statusBadge = document.getElementById('promptStatusBadge');
+    
+    if (isCustom) {
+        badge.style.display = 'inline-block';
+        statusBadge.textContent = 'Modificato';
+        statusBadge.className = 'prompt-status-badge custom';
+    } else {
+        badge.style.display = 'none';
+        statusBadge.textContent = 'Originale';
+        statusBadge.className = 'prompt-status-badge original';
+    }
+}
+
+async function openPromptEditor() {
+    const modal = document.getElementById('promptModal');
+    const textarea = document.getElementById('promptTextarea');
+    
+    textarea.value = 'Caricamento...';
+    modal.style.display = 'flex';
+    
+    try {
+        const response = await fetch(`${CONFIG.BACKEND_URL}/api/admin/prompt`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        
+        if (!response.ok) throw new Error('Errore nel caricamento del prompt');
+        
+        const data = await response.json();
+        textarea.value = data.prompt;
+        updatePromptUI(data.is_custom);
+    } catch (e) {
+        textarea.value = 'Errore: impossibile caricare il prompt. ' + e.message;
+    }
+}
+
+function closePromptEditor() {
+    document.getElementById('promptModal').style.display = 'none';
+}
+
+async function savePrompt() {
+    const textarea = document.getElementById('promptTextarea');
+    const newPrompt = textarea.value;
+    
+    if (!newPrompt.trim()) {
+        alert('Il prompt non può essere vuoto.');
+        return;
+    }
+    
+    try {
+        const response = await fetch(`${CONFIG.BACKEND_URL}/api/admin/prompt`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({ prompt: newPrompt })
+        });
+        
+        if (!response.ok) throw new Error('Errore nel salvataggio');
+        
+        const data = await response.json();
+        updatePromptUI(data.is_custom);
+        
+        // Feedback visivo temporaneo
+        const saveBtn = document.querySelector('.btn-prompt-save');
+        const originalText = saveBtn.innerHTML;
+        saveBtn.innerHTML = '<svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg> Salvato!';
+        saveBtn.style.background = 'linear-gradient(135deg, #10b981, #059669)';
+        setTimeout(() => {
+            saveBtn.innerHTML = originalText;
+            saveBtn.style.background = '';
+        }, 2000);
+    } catch (e) {
+        alert('Errore: ' + e.message);
+    }
+}
+
+async function resetPrompt() {
+    if (!confirm('Ripristinare il prompt originale hardcoded? Le modifiche temporanee andranno perse.')) return;
+    
+    try {
+        const response = await fetch(`${CONFIG.BACKEND_URL}/api/admin/prompt/reset`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        
+        if (!response.ok) throw new Error('Errore nel ripristino');
+        
+        const data = await response.json();
+        document.getElementById('promptTextarea').value = data.prompt;
+        updatePromptUI(data.is_custom);
+    } catch (e) {
+        alert('Errore: ' + e.message);
+    }
+}
