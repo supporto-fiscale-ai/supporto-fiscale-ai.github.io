@@ -160,8 +160,24 @@ async function sendMessage() {
         console.error("Errore chat:", error);
         removeMessage(typingId);
         
+        // Invia log di debug al backend per identificare l'origine dell'errore di rete
+        fetch(`${CONFIG.BACKEND_URL}/api/debug_log`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                message: error.message,
+                error: error.toString(),
+                stack: error.stack,
+                url: window.location.href,
+                additional_info: {
+                    accumulatedTextLength: accumulatedText.length,
+                    accumulatedTextSnippet: accumulatedText.slice(-100)
+                }
+            })
+        }).catch(err => console.error("Errore invio debug log:", err));
+        
         if (document.getElementById(assistantMessageId)) {
-            updateAssistantMessage(assistantMessageId, accumulatedText + `\\n\\n❌ *Errore di connessione: ${error.message}*`);
+            updateAssistantMessage(assistantMessageId, accumulatedText + `\n\n❌ *Errore di connessione: ${error.message}*`);
         } else {
             appendMessage('assistant', `❌ Si è verificato un errore: ${error.message}. Riprova più tardi.`);
         }
