@@ -98,7 +98,7 @@ async function sendMessage() {
             if (value) {
                 buffer += decoder.decode(value, { stream: true });
                 // Separa per doppio a capo (SSE standard)
-                const parts = buffer.split('\\n\\n');
+                const parts = buffer.split('\n\n');
                 buffer = parts.pop(); // tieni l'ultima parte incompleta nel buffer
                 
                 for (const part of parts) {

@@ -1,7 +1,7 @@
 const CONFIG = {
     // URL del Gist pubblico (API di GitHub)
     GIST_URL: "https://api.github.com/gists/a9b516fffea743068838be945b5b3700",
-    BACKEND_URL: "" // Verrà popolato in automatico
+    BACKEND_URL: "http://localhost:8000" // Fallback locale di default se il caricamento del Gist fallisce o è lento
 };
 
 async function initBackendUrl() {
