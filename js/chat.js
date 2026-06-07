@@ -38,6 +38,11 @@ function handleEnter(e) {
 }
 
 async function sendMessage() {
+    // Attendi che la configurazione dell'URL del backend dal Gist sia completata
+    if (typeof backendUrlPromise !== 'undefined' && backendUrlPromise) {
+        await backendUrlPromise;
+    }
+
     const inputField = document.getElementById('userInput');
     const text = inputField.value.trim();
     const sendBtn = document.getElementById('sendBtn');
