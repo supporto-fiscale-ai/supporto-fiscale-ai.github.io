@@ -136,6 +136,7 @@ async function sendMessage() {
                             
                             if (data.status === 'completed') {
                                 removeMessage(typingId);
+                                updateAssistantMessage(assistantMessageId, accumulatedText, true);
                                 appendSourcesToMessage(assistantMessageId, data.sources || []);
                                 done = true;
                             }
@@ -150,6 +151,9 @@ async function sendMessage() {
                 }
             }
         }
+        
+        // Forza l'ultimo rendering completo
+        updateAssistantMessage(assistantMessageId, accumulatedText, true);
         
         if (!isPollingActive && !done) {
             // Se fermato dall'utente
@@ -294,16 +298,23 @@ function appendEmptyAssistantMessage(id) {
     chatBox.scrollTop = chatBox.scrollHeight;
 }
 
-function updateAssistantMessage(id, content) {
+let lastParseTime = 0;
+
+function updateAssistantMessage(id, content, force = false) {
     const el = document.getElementById(id);
     if (el) {
         const contentDiv = el.querySelector('.message-content');
         if (contentDiv) {
-            // Aggiungiamo un cursore lampeggiante in coda durante la digitazione
-            if (typeof marked !== 'undefined') {
-                contentDiv.innerHTML = marked.parse(content) + '<span class="streaming-cursor">|</span>';
-            } else {
-                contentDiv.textContent = content + '|';
+            const now = Date.now();
+            // Ottimizzazione di rendering: aggiorna il DOM solo se forzato (fine stream),
+            // se il testo è breve, o se sono trascorsi almeno 150ms dall'ultimo rendering.
+            if (force || content.length < 150 || (now - lastParseTime > 150)) {
+                if (typeof marked !== 'undefined') {
+                    contentDiv.innerHTML = marked.parse(content) + '<span class="streaming-cursor">|</span>';
+                } else {
+                    contentDiv.textContent = content + '|';
+                }
+                lastParseTime = now;
             }
         }
         const chatBox = document.getElementById('chatBox');
