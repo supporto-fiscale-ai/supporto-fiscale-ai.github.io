@@ -58,13 +58,13 @@ async function sendMessage() {
     
     const assistantMessageId = 'assistant-' + Date.now();
     let accumulatedText = "";
-    let cursor = 0;
-    let taskId = null;
-    let pollTimeoutId = null;
     
     try {
-        // 3. Avvia la domanda e ottieni il task_id
-        const startResponse = await fetch(`${CONFIG.BACKEND_URL}/api/chat`, {
+        isPollingActive = true;
+        document.getElementById('stopBtn').style.display = 'inline-flex';
+        
+        // 3. Avvia lo stream
+        const response = await fetch(`${CONFIG.BACKEND_URL}/api/chat`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -73,130 +73,101 @@ async function sendMessage() {
             body: JSON.stringify({ domanda: text, mode: (typeof currentMode !== 'undefined' ? currentMode : 'laws') })
         });
         
-        if (startResponse.status === 401 || startResponse.status === 403) {
+        if (response.status === 401 || response.status === 403) {
             sessionStorage.removeItem('jwt_token');
             alert("Sessione scaduta. Effettua nuovamente il login.");
             window.location.href = 'index.html';
             return;
         }
         
-        if (!startResponse.ok) {
-            throw new Error(`Errore avvio chat (status: ${startResponse.status})`);
+        if (!response.ok) {
+            throw new Error(`Errore avvio chat (status: ${response.status})`);
         }
         
-        const startData = await startResponse.json();
-        taskId = startData.task_id;
+        // Lettura dello stream SSE tramite ReadableStream
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder("utf-8");
         
-        currentTaskId = taskId;
-        isPollingActive = true;
-        document.getElementById('stopBtn').style.display = 'inline-flex';
+        let done = false;
+        let buffer = "";
         
-        // 4. Avvia la routine di polling incrementale sequenziale e attendi il completamento
-        await new Promise((resolve, reject) => {
-            let active = true;
-            let consecutiveErrors = 0;
-            const MAX_RETRIES = 5;
+        while (!done && isPollingActive) {
+            const { value, done: readerDone } = await reader.read();
+            done = readerDone;
             
-            const doPoll = async () => {
-                if (!active) return;
-                if (!isPollingActive) {
-                    resolve();
-                    return;
-                }
-                try {
-                    // Timeout di 15 secondi per ogni singola richiesta fetch
-                    const controller = new AbortController();
-                    const timeoutId = setTimeout(() => controller.abort(), 15000);
-                    
-                    const pollResponse = await fetch(`${CONFIG.BACKEND_URL}/api/chat/poll/${taskId}?cursor=${cursor}`, {
-                        method: 'GET',
-                        headers: {
-                            'Authorization': `Bearer ${token}`
-                        },
-                        signal: controller.signal
-                    });
-                    clearTimeout(timeoutId);
-                    
-                    if (!pollResponse.ok) {
-                        throw new Error(`Errore nel polling (status: ${pollResponse.status})`);
+            if (value) {
+                buffer += decoder.decode(value, { stream: true });
+                // Separa per doppio a capo (SSE standard)
+                const parts = buffer.split('\\n\\n');
+                buffer = parts.pop(); // tieni l'ultima parte incompleta nel buffer
+                
+                for (const part of parts) {
+                    if (part.startsWith(': ping')) {
+                        // Keep-alive ping, ignoralo
+                        continue;
                     }
-                    
-                    const data = await pollResponse.json();
-                    
-                    // Reset contatore errori su successo
-                    consecutiveErrors = 0;
-                    
-                    if (data.status === "error") {
-                        throw new Error(data.error || "Errore sconosciuto del modello");
-                    }
-                    
-                    // Se abbiamo nuovi token, li mostriamo a schermo
-                    if (data.new_tokens && data.new_tokens.length > 0) {
-                        removeMessage(typingId);
-                        
-                        if (!document.getElementById(assistantMessageId)) {
-                            appendEmptyAssistantMessage(assistantMessageId);
+                    if (part.startsWith('data: ')) {
+                        const dataStr = part.substring(6);
+                        if (dataStr === '[DONE]') {
+                            done = true;
+                            break;
                         }
                         
-                        accumulatedText += data.new_tokens;
-                        updateAssistantMessage(assistantMessageId, accumulatedText);
-                    }
-                    
-                    // Aggiorniamo il cursor locale
-                    cursor = data.cursor;
-                    
-                    if (data.status === "completed") {
-                        active = false;
-                        
-                        // Rimuove l'indicatore nel caso non sia arrivato alcun token (caso limite)
-                        removeMessage(typingId);
-                        
-                        // Mostriamo le fonti normative alla fine
-                        appendSourcesToMessage(assistantMessageId, data.sources || []);
-                        resolve();
-                    } else {
-                        // Prossimo poll dopo 3 secondi (bilanciato per tunnel Cloudflare gratuiti)
-                        if (active) {
-                            pollTimeoutId = setTimeout(doPoll, 3000);
+                        try {
+                            const data = JSON.parse(dataStr);
+                            
+                            if (data.error) {
+                                throw new Error(data.error);
+                            }
+                            if (data.status === 'error') {
+                                throw new Error(data.error || "Errore sconosciuto");
+                            }
+                            
+                            if (data.new_tokens) {
+                                removeMessage(typingId);
+                                
+                                if (!document.getElementById(assistantMessageId)) {
+                                    appendEmptyAssistantMessage(assistantMessageId);
+                                }
+                                
+                                accumulatedText += data.new_tokens;
+                                updateAssistantMessage(assistantMessageId, accumulatedText);
+                            }
+                            
+                            if (data.status === 'completed') {
+                                removeMessage(typingId);
+                                appendSourcesToMessage(assistantMessageId, data.sources || []);
+                                done = true;
+                            }
+                        } catch (e) {
+                            if (e.message.includes("Unexpected token") || e.message.includes("JSON")) {
+                                console.warn("JSON parziale:", dataStr);
+                            } else {
+                                throw e;
+                            }
                         }
-                    }
-                } catch (e) {
-                    // Se è un errore di rete/timeout (tipico dei tunnel CF), ritenta automaticamente
-                    const isNetworkError = e.name === 'AbortError' || e.message === 'Failed to fetch' || e.name === 'TypeError';
-                    
-                    if (isNetworkError && consecutiveErrors < MAX_RETRIES) {
-                        consecutiveErrors++;
-                        console.warn(`[Poll] Errore di rete (tentativo ${consecutiveErrors}/${MAX_RETRIES}), riprovo...`);
-                        // Backoff esponenziale: 2s, 4s, 8s, 16s, 32s
-                        const backoff = Math.min(2000 * Math.pow(2, consecutiveErrors - 1), 32000);
-                        if (active) {
-                            pollTimeoutId = setTimeout(doPoll, backoff);
-                        }
-                    } else {
-                        active = false;
-                        reject(e);
                     }
                 }
-            };
-            
-            // Eseguiamo il primo poll dopo 1 secondo (diamo tempo al backend di iniziare)
-            pollTimeoutId = setTimeout(doPoll, 1000);
-        });
+            }
+        }
+        
+        if (!isPollingActive && !done) {
+            // Se fermato dall'utente
+            await reader.cancel();
+        }
         
     } catch (error) {
         console.error("Errore chat:", error);
         removeMessage(typingId);
-        if (pollTimeoutId) clearTimeout(pollTimeoutId);
         
         if (document.getElementById(assistantMessageId)) {
-            updateAssistantMessage(assistantMessageId, accumulatedText + `\n\n❌ *Errore di connessione: ${error.message}*`);
+            updateAssistantMessage(assistantMessageId, accumulatedText + `\\n\\n❌ *Errore di connessione: ${error.message}*`);
         } else {
             appendMessage('assistant', `❌ Si è verificato un errore: ${error.message}. Riprova più tardi.`);
         }
     } finally {
         isPollingActive = false;
         document.getElementById('stopBtn').style.display = 'none';
-        currentTaskId = null;
         inputField.disabled = false;
         sendBtn.disabled = false;
         inputField.focus();
@@ -446,20 +417,6 @@ function clearChat() {
 async function stopGeneration() {
     isPollingActive = false;
     document.getElementById('stopBtn').style.display = 'none';
-    
-    if (currentTaskId) {
-        try {
-            await fetch(`${CONFIG.BACKEND_URL}/api/chat/stop/${currentTaskId}`, {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${token}`
-                }
-            });
-        } catch (e) {
-            console.error("Errore stop:", e);
-        }
-        currentTaskId = null;
-    }
 }
 
 // --- Prompt Editor ---
