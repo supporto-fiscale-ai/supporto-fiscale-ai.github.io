@@ -68,14 +68,24 @@ async function sendMessage() {
         isPollingActive = true;
         document.getElementById('stopBtn').style.display = 'inline-flex';
         
-        // 3. Avvia lo stream
+        // 3. Avvia lo stream con timeout di 5 minuti per coprire il model-swap
+        const controller = new AbortController();
+        let timeoutId = setTimeout(() => controller.abort(), 300000); // 5 minuti
+        
+        // Funzione per resettare il timeout ad ogni dato ricevuto
+        const resetTimeout = () => {
+            clearTimeout(timeoutId);
+            timeoutId = setTimeout(() => controller.abort(), 300000);
+        };
+        
         const response = await fetch(`${CONFIG.BACKEND_URL}/api/chat`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${token}`
             },
-            body: JSON.stringify({ domanda: text, mode: (typeof currentMode !== 'undefined' ? currentMode : 'laws') })
+            body: JSON.stringify({ domanda: text, mode: (typeof currentMode !== 'undefined' ? currentMode : 'laws') }),
+            signal: controller.signal
         });
         
         if (response.status === 401 || response.status === 403) {
@@ -107,11 +117,13 @@ async function sendMessage() {
                 buffer = parts.pop(); // tieni l'ultima parte incompleta nel buffer
                 
                 for (const part of parts) {
-                    if (part.startsWith(': ping')) {
-                        // Keep-alive ping, ignoralo
+                    if (part.startsWith(': ping') || part.trim() === '') {
+                        // Keep-alive ping (commento SSE), ignoralo
+                        resetTimeout();
                         continue;
                     }
                     if (part.startsWith('data: ')) {
+                        resetTimeout();
                         const dataStr = part.substring(6);
                         if (dataStr === '[DONE]') {
                             done = true;
@@ -126,6 +138,11 @@ async function sendMessage() {
                             }
                             if (data.status === 'error') {
                                 throw new Error(data.error || "Errore sconosciuto");
+                            }
+                            
+                            if (data.keep_alive) {
+                                // Keep-alive data event dal backend, ignora
+                                continue;
                             }
                             
                             if (data.new_tokens) {
@@ -162,8 +179,11 @@ async function sendMessage() {
         
         if (!isPollingActive && !done) {
             // Se fermato dall'utente
+            controller.abort();
             await reader.cancel();
         }
+        
+        clearTimeout(timeoutId);
         
     } catch (error) {
         console.error("Errore chat:", error);
