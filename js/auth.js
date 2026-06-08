@@ -21,6 +21,11 @@ document.addEventListener('DOMContentLoaded', () => {
             submitBtn.innerHTML = 'Autenticazione... <span class="typing-dot"></span><span class="typing-dot"></span>';
             errorDiv.innerText = '';
 
+            // Attendi che la configurazione dell'URL del backend dal Gist sia completata
+            if (typeof backendUrlPromise !== 'undefined' && backendUrlPromise) {
+                await backendUrlPromise;
+            }
+
             try {
                 const response = await fetch(`${CONFIG.BACKEND_URL}/api/login`, {
                     method: 'POST',
