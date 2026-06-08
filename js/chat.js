@@ -105,6 +105,7 @@ async function sendMessage() {
         
         let done = false;
         let buffer = "";
+        let finalSources = null;
         
         while (!done && isPollingActive) {
             const { value, done: readerDone } = await reader.read();
@@ -158,9 +159,9 @@ async function sendMessage() {
                             
                             if (data.status === 'completed') {
                                 removeMessage(typingId);
-                                updateAssistantMessage(assistantMessageId, accumulatedText, true);
-                                appendSourcesToMessage(assistantMessageId, data.sources || []);
+                                finalSources = data.sources || [];
                                 done = true;
+                                break;
                             }
                         } catch (e) {
                             if (e.message.includes("Unexpected token") || e.message.includes("JSON")) {
@@ -174,8 +175,12 @@ async function sendMessage() {
             }
         }
         
-        // Forza l'ultimo rendering completo
-        updateAssistantMessage(assistantMessageId, accumulatedText, true);
+        // Forza l'ultimo rendering completo senza cursore
+        updateAssistantMessage(assistantMessageId, accumulatedText, true, true);
+        
+        if (finalSources) {
+            appendSourcesToMessage(assistantMessageId, finalSources);
+        }
         
         if (!isPollingActive && !done) {
             // Se fermato dall'utente
@@ -325,7 +330,7 @@ function appendEmptyAssistantMessage(id) {
 
 let lastParseTime = 0;
 
-function updateAssistantMessage(id, content, force = false) {
+function updateAssistantMessage(id, content, force = false, isDone = false) {
     const el = document.getElementById(id);
     if (el) {
         const contentDiv = el.querySelector('.message-content');
@@ -335,9 +340,9 @@ function updateAssistantMessage(id, content, force = false) {
             // se il testo è breve, o se sono trascorsi almeno 150ms dall'ultimo rendering.
             if (force || content.length < 150 || (now - lastParseTime > 150)) {
                 if (typeof marked !== 'undefined') {
-                    contentDiv.innerHTML = marked.parse(content) + '<span class="streaming-cursor">|</span>';
+                    contentDiv.innerHTML = marked.parse(content) + (isDone ? '' : '<span class="streaming-cursor">|</span>');
                 } else {
-                    contentDiv.textContent = content + '|';
+                    contentDiv.textContent = content + (isDone ? '' : '|');
                 }
                 lastParseTime = now;
             }
