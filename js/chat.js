@@ -28,6 +28,20 @@ document.addEventListener('DOMContentLoaded', () => {
 
 let currentTaskId = null;
 let isPollingActive = false;
+let chatHistory = [];
+
+function clearChat() {
+    chatHistory = [];
+    const chatBox = document.getElementById('chatBox');
+    chatBox.innerHTML = `
+        <div class="message assistant">
+            <div class="avatar">AI</div>
+            <div class="message-content">
+                <p>Salve. Sono il tuo Assistente Commercialista (Sistema accelerato Blackwell). Cerca pure nella banca dati legislativa in linguaggio naturale. Come posso aiutarti oggi?</p>
+            </div>
+        </div>
+    `;
+}
 
 // Permette l'invio premendo Enter (senza Shift)
 function handleEnter(e) {
@@ -51,6 +65,7 @@ async function sendMessage() {
     
     // 1. Aggiungi il messaggio dell'utente alla chat
     appendMessage('user', text);
+    chatHistory.push({role: "user", content: text});
     
     // Reset input
     inputField.value = '';
@@ -84,7 +99,11 @@ async function sendMessage() {
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${token}`
             },
-            body: JSON.stringify({ domanda: text, mode: (typeof currentMode !== 'undefined' ? currentMode : 'laws') }),
+            body: JSON.stringify({ 
+                domanda: text, 
+                mode: (typeof currentMode !== 'undefined' ? currentMode : 'laws'),
+                chat_history: chatHistory.slice(-6)
+            }),
             signal: controller.signal
         });
         
@@ -177,6 +196,7 @@ async function sendMessage() {
         
         // Forza l'ultimo rendering completo senza cursore
         updateAssistantMessage(assistantMessageId, accumulatedText, true, true);
+        chatHistory.push({role: "assistant", content: accumulatedText});
         
         if (finalSources) {
             appendSourcesToMessage(assistantMessageId, finalSources);
